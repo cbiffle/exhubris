@@ -20,25 +20,30 @@ pub fn do_cargo_build(
     outdir: &Path,
     product_name: &str,
     cargo_verbose: bool,
+    build_verbose: bool,
 ) -> miette::Result<()> {
     let comma_features = itertools::join(&plan.cargo_features, ",");
-    let mut rows = vec![
-        ("Product", product_name),
-        ("Package", &plan.package_name),
-        ("Binary", &plan.bin_name),
-        ("Target", &plan.target_triple),
-        ("Default Features", if plan.default_features { "true" } else { "false" }),
-        ("Features", &comma_features),
-    ];
-    if let Some(tc) = &plan.toolchain_override {
-        rows.push(("Toolchain Override", tc));
+    if build_verbose {
+        let mut rows = vec![
+            ("Product", product_name),
+            ("Package", &plan.package_name),
+            ("Binary", &plan.bin_name),
+            ("Target", &plan.target_triple),
+            ("Default Features", if plan.default_features { "true" } else { "false" }),
+            ("Features", &comma_features),
+        ];
+        if let Some(tc) = &plan.toolchain_override {
+            rows.push(("Toolchain Override", tc));
+        }
+        let joined_rustflags = plan.rustflags.join("\n");
+        rows.push(("RUSTFLAGS", &joined_rustflags));
+        for (k, v) in &plan.smuggled_env {
+            rows.push((k, v));
+        }
+        crate::verbose::simple_table(rows);
+    } else {
+        crate::verbose::banner(format!("building component: {product_name}"));
     }
-    let joined_rustflags = plan.rustflags.join("\n");
-    rows.push(("RUSTFLAGS", &joined_rustflags));
-    for (k, v) in &plan.smuggled_env {
-        rows.push((k, v));
-    }
-    crate::verbose::simple_table(rows);
     
     let mut cmd = cmd_with_clean_env("cargo");
 

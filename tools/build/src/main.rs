@@ -11,6 +11,9 @@ use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 struct Tool {
     #[clap(subcommand)]
     cmd: Cmd,
+
+    #[clap(short, long, global=true)]
+    verbose: bool,
 }
 
 #[derive(Parser)]
@@ -146,6 +149,7 @@ fn main() -> miette::Result<()> {
                     &initial_build_dir,
                     name,
                     cargo_verbose,
+                    args.verbose,
                 )?;
             }
 
@@ -294,6 +298,7 @@ fn main() -> miette::Result<()> {
                 &dir3,
                 "kernel",
                 cargo_verbose,
+                args.verbose,
             )?;
 
             // Measure the kernel so we can report the actual allocations.
