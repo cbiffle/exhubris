@@ -4,11 +4,9 @@
 // non-comment line in the file.
 app demo
 
-// Currently the board information is inlined. It would be nice to refer to an
-// external file, like we already do for chip definitions.
-board nucleo-g031k8 {
-    chip "proj:chips/stm32g031k8.kdl"
-}
+// Selects a specific target board, which implicitly picks up things like the
+// CPU type.
+board "proj:boards/nucleo-g031k8.kdl"
 
 // Instructions for building the kernel.
 kernel {
