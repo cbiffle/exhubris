@@ -45,7 +45,7 @@ pub fn print_allocations(
 ) {
     let mut table = comfy_table::Table::new();
     table.load_preset(comfy_table::presets::NOTHING);
-    table.set_header(["MEMORY", "OWNER", "START", "END", "SIZE", "LOST"]);
+    table.set_header(["MEMORY", "OWNER", "START", "END", "SIZE", "WASTE"]);
     table.column_mut(2).unwrap().set_cell_alignment(CellAlignment::Right);
     table.column_mut(3).unwrap().set_cell_alignment(CellAlignment::Right);
     table.column_mut(4).unwrap().set_cell_alignment(CellAlignment::Right);
