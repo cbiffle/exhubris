@@ -4,7 +4,7 @@ use clap::Parser;
 use miette::{miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
-use hubris_build::{alloc::allocate_space, appcfg, buildid::BuildId, cargo::{do_cargo_build, LinkStyle}, get_target_spec, relink::{relink_final, relink_for_size}, verbose::{banner, print_allocations, simple_table}};
+use hubris_build::{alloc::allocate_space, appcfg, buildid::BuildId, cargo::{do_cargo_build, LinkStyle}, get_target_spec, relink::{collect_sizes, merge_ranges, relink_final, relink_for_size}, verbose::{banner, print_allocations, simple_table}};
 use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 
 #[derive(Parser)]
@@ -176,9 +176,11 @@ fn main() -> miette::Result<()> {
                 )?;
 
                 let ti = size_reqs.entry(TaskName(taskname.clone())).or_default();
-                for (region, range) in region_sizes {
-                    let size = range.end - range.start;
-                    ti.reqs.insert(Mem(region), size);
+                for (region, rangeset) in region_sizes {
+                    if let Some(range) = merge_ranges(&rangeset) {
+                        let size = range.end - range.start;
+                        ti.reqs.insert(Mem(region), size);
+                    }
                 }
                 ti.regs_avail = target_spec.region_count - app.tasks[taskname].peripherals.len();
             }
@@ -191,10 +193,6 @@ fn main() -> miette::Result<()> {
             let alloc_time = alloc_begin.elapsed();
 
             buildid.hash(&allocs);
-
-            // Display the allocations (and timing info):
-            println!("Allocations ({alloc_time:?}):");
-            print_allocations(&allocs);
 
             // Begin our final link phase by clearing out any cruft.
             let dir3 = workdir.join("final");
@@ -297,6 +295,19 @@ fn main() -> miette::Result<()> {
                 "kernel",
                 cargo_verbose,
             )?;
+
+            // Measure the kernel so we can report the actual allocations.
+            {
+                let kernel_image = std::fs::read(dir3.join("kernel")).into_diagnostic()?;
+                let ksizes = collect_sizes(&app, &kernel_image)?;
+                println!();
+                println!("Allocations ({alloc_time:?}):");
+                print_allocations(
+                    &app,
+                    &allocs.by_region(),
+                    &ksizes,
+                );
+            }
 
             std::fs::remove_file(tmpdir.join("memory.x")).into_diagnostic()?;
 

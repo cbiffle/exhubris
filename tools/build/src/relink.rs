@@ -4,6 +4,7 @@ use std::io::Write;
 
 use goblin::elf::program_header::PT_LOAD;
 use miette::{IntoDiagnostic as _, miette};
+use rangemap::RangeSet;
 
 use crate::cmd_with_clean_env;
 use crate::{alloc::TaskAllocation, appcfg::{AppDef, TaskDef}, BuildEnv, TargetSpec};
@@ -199,7 +200,7 @@ pub fn relink_for_size(
     inpath: &Path,
     outpath: &Path,
     linker_script: &Path,
-) -> miette::Result<BTreeMap<String, Range<u64>>> {
+) -> miette::Result<BTreeMap<String, RangeSet<u64>>> {
     // Make an "allocation result" that assigns this task all of memory.
     let alloc_everything = app.board.chip.memory.iter()
         .map(|(name, regdef)| (name.clone(), TaskAllocation {
@@ -213,13 +214,21 @@ pub fn relink_for_size(
 
     // Load the result and analyze the memory layout.
     let file_image = std::fs::read(outpath).into_diagnostic()?;
-    let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
+
+    collect_sizes(app, &file_image)
+}
+
+pub fn collect_sizes(
+    app: &AppDef,
+    file_image: &[u8],
+) -> miette::Result<BTreeMap<String, RangeSet<u64>>> {
+    let elf = goblin::elf::Elf::parse(file_image).into_diagnostic()?;
 
     // Initialize the size map with an entry for each type of memory defined in
     // the chipdef, but with a zero-size range at its base. We will enlarge
     // these ranges as required.
     let mut region_sizes = app.board.chip.memory.iter()
-        .map(|(name, region)| (name.clone(), *region.value().base.value()..*region.value().base.value()))
+        .map(|(name, _region)| (name.clone(), RangeSet::new()))
         .collect::<BTreeMap<_, _>>();
 
     for phdr in &elf.program_headers {
@@ -235,8 +244,7 @@ pub fn relink_for_size(
         // Borrow its size range in our output table.
         let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
         // Enlarge the range to contain all of this item.
-        sz.start = u64::min(sz.start, phdr.p_vaddr);
-        sz.end = u64::max(sz.end, phdr.p_vaddr + phdr.p_memsz);
+        sz.insert(phdr.p_vaddr .. phdr.p_vaddr + phdr.p_memsz);
 
         if phdr.p_vaddr != phdr.p_paddr {
             // This is an "initialized data" phdr, like the .data section. This
@@ -249,11 +257,16 @@ pub fn relink_for_size(
                 .expect("internal inconsistency");
 
             let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
-            sz.start = u64::min(sz.start, phdr.p_paddr);
-            sz.end = u64::max(sz.end, phdr.p_paddr + phdr.p_filesz);
+            sz.insert(phdr.p_paddr .. phdr.p_paddr + phdr.p_filesz);
         }
     }
     Ok(region_sizes)
+}
+
+pub fn merge_ranges(set: &RangeSet<u64>) -> Option<Range<u64>> {
+    let start = set.first()?;
+    let end = set.last()?;
+    Some(start.start .. end.end)
 }
 
 /// Relink a partially-linked task executable in its final location.
